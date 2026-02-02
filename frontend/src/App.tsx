@@ -215,7 +215,7 @@ function App() {
   return (
     <div className="flex h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30">
       
-      {showDeleteModal && (
+      
       {showDeleteModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
               <div className="bg-slate-900 border border-slate-700 rounded-xl p-6 max-w-sm w-full shadow-2xl transform scale-100 transition-all">

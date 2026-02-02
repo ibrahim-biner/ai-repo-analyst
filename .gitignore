@@ -11,5 +11,8 @@ frontend/dist/
 frontend/.env
 .DS_Store
 
-
+.eslintcache
 backend/data/
+
+*.bak
+*.swp

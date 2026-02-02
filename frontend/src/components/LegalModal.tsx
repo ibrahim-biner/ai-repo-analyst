@@ -13,7 +13,7 @@ interface LegalModalProps {
 const termsContent = (
   <div className="space-y-5 text-slate-300 text-sm leading-relaxed">
     <p className="text-slate-400 italic">
-      Bu uygulama, bir yazılım mühendisliği bitirme/portfolyo projesi kapsamında geliştirilmiş deneysel bir araçtır. 
+      Bu uygulama, bir yazılım mühendisliği portfolyo projesi kapsamında geliştirilmiş deneysel bir araçtır. 
       Kayıt olarak aşağıdaki şartları peşinen kabul etmiş sayılırsınız.
     </p>
     
