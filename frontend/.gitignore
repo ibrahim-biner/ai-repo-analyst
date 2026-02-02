@@ -1,3 +1,23 @@
+
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+.DS_Store
+
+.eslintcache
+backend/data/
+
+*.bak
+*.swp
+
+
 # Logs
 logs
 *.log
@@ -22,3 +42,5 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+
