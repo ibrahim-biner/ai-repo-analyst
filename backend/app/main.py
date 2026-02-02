@@ -6,12 +6,18 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
+import os
+
 
 from app.core.config import settings
 from app.api.api import api_router
 from app.limiter import limiter
 
-app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION)
+IS_DEBUG = os.getenv("DEBUG", "false").lower() == "true"
+app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION,
+    docs_url="/docs" if IS_DEBUG else None,
+    redoc_url="/redoc" if IS_DEBUG else None,
+    openapi_url="/openapi.json" if IS_DEBUG else None)
 
 # CORS ayarları: İzin verilen origin'ler env'den okunur (virgülle ayrılmış)
 origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
