@@ -8,7 +8,10 @@ import ReactMarkdown from 'react-markdown';
 // @ts-ignore
 import remarkGfm from 'remark-gfm';
 
+
+
 import Toast from './components/Toast';
+import ResetPasswordModal from './components/ResetPasswordModal';
 import Auth from './pages/Auth';
 import { indexRepo, chatWithRepo, getUserRepos, saveMessage, getChatHistory, deleteRepo } from './services/api';
 import type { UserRepo } from './services/api';
@@ -20,6 +23,8 @@ interface Message {
 }
 
 function App() {
+    // Şifre sıfırlama modalı için state
+    const [showResetModal, setShowResetModal] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
@@ -39,9 +44,14 @@ function App() {
   const [deleting, setDeleting] = useState(false);
 
   const [showToast, setShowToast] = useState<boolean>(false);
-  const [toastMessage, setToastMessage] = useState<string>('');
+  const [toastMessage, setToastMessage] = useState<{text: string, type: 'success' | 'error'}>({text: '', type: 'success'});
 
   useEffect(() => {
+    // Şifre sıfırlama linkiyle gelindiyse modalı aç
+    if (window.location.hash.includes('type=recovery')) {
+      setShowResetModal(true);
+    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setLoadingSession(false);
@@ -150,7 +160,7 @@ function App() {
       setActiveRepo(result.repo_name);
       
       setStatus('');
-      setToastMessage(`${result.repo_name} başarıyla analiz edildi!`);
+      setToastMessage({text: `${result.repo_name} başarıyla analiz edildi!`, type: 'success'});
       setShowToast(true);
 
       setMessages([{ role: 'ai', content: `**${result.repo_name}** reposunu inceledim. Bana kodlarla ilgili istediğini sorabilirsin!` }]);
@@ -199,7 +209,7 @@ function App() {
       }
     } catch (err: any) {
       if (err.message && err.message.includes('Günlük hakkınız doldu')) {
-        setToastMessage({ text: err.message, type: 'error' });
+        setToastMessage({text: err.message, type: 'error'});
         setShowToast(true);
       } else {
         setMessages(prev => [...prev, { role: 'ai', content: '⚠️ Üzgünüm, cevap üretirken bir hata oluştu.' }]);
@@ -213,7 +223,9 @@ function App() {
   if (!session) return <Auth onLoginSuccess={() => {}} />;
 
   return (
-    <div className="flex h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30">
+    <>
+      <ResetPasswordModal open={showResetModal} onClose={() => setShowResetModal(false)} />
+      <div className="flex h-screen bg-slate-950 text-slate-200 font-sans selection:bg-blue-500/30">
       
       
       {showDeleteModal && (
@@ -440,14 +452,15 @@ function App() {
           </div>
         </div>
       </div>
+      </div>
       {showToast && (
         <Toast 
-          message={typeof toastMessage === 'string' ? toastMessage : toastMessage.text} 
-          type={typeof toastMessage === 'object' ? toastMessage.type : 'success'}
+          message={toastMessage.text} 
+          type={toastMessage.type}
           onClose={() => setShowToast(false)} 
         />
       )}
-    </div>
+    </>
   );
 }
 

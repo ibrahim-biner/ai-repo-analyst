@@ -22,6 +22,7 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
   const [isSignUp, setIsSignUp] = useState(false);
   const [msg, setMsg] = useState<{ type: 'error' | 'success', text: string } | null>(null);
   const [legalModal, setLegalModal] = useState<LegalType | null>(null);
+  const [forgotMode, setForgotMode] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +30,17 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
     setMsg(null);
 
     try {
+      // Şifremi unuttum modu
+      if (forgotMode) {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/#type=recovery`,
+        });
+        if (error) throw error;
+        setMsg({ type: 'success', text: 'Şifre sıfırlama linki e-posta adresinize gönderildi!' });
+        setForgotMode(false);
+        return;
+      }
+
       if (isSignUp) {
         if (password !== confirmPassword) throw new Error("Şifreler birbiriyle uyuşmuyor!");
         if (!firstName.trim() || !lastName.trim()) throw new Error("Lütfen isim ve soyisim alanlarını doldurun.");
@@ -131,20 +143,22 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
             />
           </div>
 
-          <div className="relative">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-              <Lock className="h-5 w-5 text-slate-500" />
+          {!forgotMode && (
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <Lock className="h-5 w-5 text-slate-500" />
+              </div>
+              <input
+                type="password"
+                required={!forgotMode}
+                minLength={6}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="block w-full rounded-lg border border-slate-700/50 bg-slate-800/50 p-3 pl-10 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:text-sm outline-none transition-all"
+                placeholder="Şifre"
+              />
             </div>
-            <input
-              type="password"
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="block w-full rounded-lg border border-slate-700/50 bg-slate-800/50 p-3 pl-10 text-white placeholder-slate-500 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:text-sm outline-none transition-all"
-              placeholder="Şifre"
-            />
-          </div>
+          )}
 
           {isSignUp && (
              <div className="relative animate-in fade-in slide-in-from-top-2 duration-300">
@@ -200,22 +214,42 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
             disabled={loading}
             className="group relative flex w-full justify-center rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-3 text-sm font-semibold text-white hover:from-blue-500 hover:to-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 transition-all shadow-lg shadow-blue-900/30 active:scale-95 hover:shadow-blue-500/25"
           >
-            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : (isSignUp ? 'Hesap Oluştur' : 'Giriş Yap')}
+            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : (forgotMode ? 'Şifre Sıfırlama Linki Gönder' : (isSignUp ? 'Hesap Oluştur' : 'Giriş Yap'))}
           </button>
         </form>
 
-        <div className="text-center text-sm relative z-10">
-          <button
-            onClick={() => { 
-                setIsSignUp(!isSignUp); 
-                setMsg(null); 
-                setPassword(''); 
-                setConfirmPassword('');
-            }}
-            className="font-medium text-blue-400 hover:text-blue-300 transition-colors hover:underline underline-offset-4"
-          >
-            {isSignUp ? 'Zaten hesabın var mı? Giriş yap' : 'Hesabın yok mu? Hemen kayıt ol'}
-          </button>
+        <div className="text-center text-sm relative z-10 flex flex-col items-center gap-3">
+          {forgotMode ? (
+            <button
+              onClick={() => { setForgotMode(false); setMsg(null); }}
+              className="font-medium text-blue-400 hover:text-blue-300 transition-colors hover:underline underline-offset-4"
+            >
+              ← Giriş ekranına dön
+            </button>
+          ) : (
+            <>
+              {!isSignUp && (
+                <button
+                  type="button"
+                  onClick={() => { setForgotMode(true); setMsg(null); }}
+                  className="font-medium text-blue-400 hover:text-blue-300 transition-colors hover:underline underline-offset-4 block"
+                >
+                  Şifremi Unuttum
+                </button>
+              )}
+              <button
+                onClick={() => { 
+                    setIsSignUp(!isSignUp); 
+                    setMsg(null); 
+                    setPassword(''); 
+                    setConfirmPassword('');
+                }}
+                className="font-medium text-blue-400 hover:text-blue-300 transition-colors hover:underline underline-offset-4 block"
+              >
+                {isSignUp ? 'Zaten hesabın var mı? Giriş yap' : 'Hesabın yok mu? Hemen kayıt ol'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
