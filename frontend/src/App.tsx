@@ -47,8 +47,9 @@ function App() {
   const [toastMessage, setToastMessage] = useState<{text: string, type: 'success' | 'error'}>({text: '', type: 'success'});
 
   useEffect(() => {
-    // Şifre sıfırlama linkiyle gelindiyse modalı aç
-    if (window.location.hash.includes('type=recovery')) {
+    // İlk olarak hash kontrolü yap - şifre sıfırlama linki mi?
+    const hash = window.location.hash;
+    if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
       setShowResetModal(true);
     }
 
@@ -61,6 +62,11 @@ function App() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       if (session?.user?.id) fetchRepos(session.user.id);
+      
+      // Eğer recovery event ise modal aç
+      if (_event === 'PASSWORD_RECOVERY') {
+        setShowResetModal(true);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -218,6 +224,23 @@ function App() {
       setThinking(false);
     }
   };
+
+  // Şifre sıfırlama modalı her zaman gösterilmeli (oturum durumundan bağımsız)
+  if (showResetModal) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4 font-sans bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-950 to-slate-950">
+        <ResetPasswordModal 
+          open={true} 
+          onClose={() => {
+            setShowResetModal(false);
+            // Hash'i temizle
+            window.location.hash = '';
+            window.location.href = '/';
+          }} 
+        />
+      </div>
+    );
+  }
 
   if (loadingSession) return <div className="flex h-screen items-center justify-center bg-slate-950 text-white"><Loader2 className="animate-spin w-8 h-8 text-blue-500"/></div>;
   if (!session) return <Auth onLoginSuccess={() => {}} />;
