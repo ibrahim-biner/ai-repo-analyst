@@ -49,9 +49,37 @@ function App() {
   useEffect(() => {
     // İlk olarak hash kontrolü yap - şifre sıfırlama linki mi?
     const hash = window.location.hash;
-    if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
-      setShowResetModal(true);
-    }
+    
+    const handleRecoveryToken = async () => {
+      if (hash && hash.includes('access_token') && hash.includes('type=recovery')) {
+        // Hash'ten token'ları parse et
+        const hashParams = new URLSearchParams(hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        
+        if (accessToken) {
+          try {
+            // Token ile oturum başlat
+            const { error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            });
+            
+            if (!error) {
+              setShowResetModal(true);
+            } else {
+              console.error('Recovery session error:', error);
+            }
+          } catch (err) {
+            console.error('Token set error:', err);
+          }
+        }
+      } else if (hash && hash.includes('type=recovery')) {
+        setShowResetModal(true);
+      }
+    };
+
+    handleRecoveryToken();
 
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
