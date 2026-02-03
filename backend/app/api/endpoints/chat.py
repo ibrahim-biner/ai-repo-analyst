@@ -28,7 +28,7 @@ class ChatRequest(BaseModel):
 
 
 @router.post("/ask")
-@limiter.limit("2/day", key_func=lambda request: getattr(request.state, 'user_id', get_remote_address(request)))
+@limiter.limit("5/day", key_func=lambda request: getattr(request.state, 'user_id', get_remote_address(request)))
 async def chat(request: Request, data: ChatRequest, current_user_id: str = Depends(get_current_user)):
 
 

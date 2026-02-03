@@ -269,8 +269,9 @@ function App() {
           saveMessage(session.user.id, activeRepo, 'ai', fullAiResponse);
       }
     } catch (err: any) {
-      if (err.message && err.message.includes('Günlük hakkınız doldu')) {
-        setToastMessage({text: err.message, type: 'error'});
+      // Rate limit veya diğer hataları yakala
+      if (err.message && (err.message.includes('Günlük hakkınız doldu') || err.message.includes('429') || err.message.includes('rate limit'))) {
+        setToastMessage({text: 'Günlük soru sorma hakkınız doldu. Lütfen yarın tekrar deneyin.', type: 'error'});
         setShowToast(true);
       } else {
         setMessages(prev => [...prev, { role: 'ai', content: '⚠️ Üzgünüm, cevap üretirken bir hata oluştu.' }]);

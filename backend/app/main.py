@@ -42,8 +42,8 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
     return JSONResponse(
         status_code=429, 
         content={
-            "detail": "Çok fazla istek gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.",
-            "retry_after": "60 saniye"
+            "detail": "Günlük hakkınız doldu. Lütfen yarın tekrar deneyin.",
+            "retry_after": "24 saat"
         }
     )
 
