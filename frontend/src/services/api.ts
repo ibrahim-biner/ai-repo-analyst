@@ -1,13 +1,13 @@
 /**
  * Backend API ile iletişim. Tüm isteklerde JWT Authorization header kullanılır.
- * Timeout: 120 saniye (repo işlemleri için yeterli)
+ * Timeout: 180 saniye (büyük repo işlemleri için)
  */
 import axios from 'axios';
 
 import { supabase } from '../supabase';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api/v1';
-const REQUEST_TIMEOUT = 120000; // 120 saniye
+const REQUEST_TIMEOUT = 180000; // 180 saniye (3 dakika)
 
 // Axios instance - timeout yapılandırmalı
 const apiClient = axios.create({

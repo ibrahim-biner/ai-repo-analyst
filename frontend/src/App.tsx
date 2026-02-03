@@ -64,8 +64,9 @@ function App() {
     const initializeAuth = async () => {
       const hash = window.location.hash;
       
-      // Hash'te recovery token var mı kontrol et
-      if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
+      // Hash'te recovery token var mı kontrol et (SADECE type=recovery için)
+      // type=signup ise normal giriş yapılmalı, şifre sıfırlama modalı açılmamalı
+      if (hash && hash.includes('type=recovery')) {
         console.log('🔐 Recovery mode detected from URL hash');
         isRecoveryMode.current = true;
         
@@ -73,6 +74,13 @@ function App() {
         setShowResetModal(true);
         setLoadingSession(false);
         return;
+      }
+      
+      // type=signup ise (email confirmation) - hash'i temizle ve normal devam et
+      if (hash && hash.includes('type=signup')) {
+        console.log('✅ Email confirmation detected - proceeding with normal login');
+        // Hash'i temizle (URL'den kaldır)
+        window.history.replaceState(null, '', window.location.pathname);
       }
 
       // Normal session kontrolü
@@ -233,7 +241,14 @@ function App() {
       
     } catch (err: any) {
       // Backend'den gelen 400 hatasını (Limit dolu) burada yakalar
-      setError(err.response?.data?.detail || err.message || 'Bir hata oluştu');
+      let errorMessage = err.response?.data?.detail || err.message || 'Bir hata oluştu';
+      
+      // Timeout hatasını Türkçeleştir
+      if (errorMessage.includes('timeout') || errorMessage.includes('exceeded') || err.code === 'ECONNABORTED') {
+        errorMessage = '⏱️ İşlem zaman aşımına uğradı. Repo çok büyük olabilir veya sunucu yoğun. Lütfen birkaç dakika bekleyip tekrar deneyin.';
+      }
+      
+      setError(errorMessage);
       setStatus('');
     } finally {
       setIndexing(false);

@@ -56,11 +56,11 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={"detail": "Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin."}
     )
 
-# Request timeout middleware (120 saniye)
+# Request timeout middleware (180 saniye - büyük repolar için)
 @app.middleware("http")
 async def timeout_middleware(request: Request, call_next):
     try:
-        return await asyncio.wait_for(call_next(request), timeout=120.0)
+        return await asyncio.wait_for(call_next(request), timeout=180.0)
     except asyncio.TimeoutError:
         logger.error(f"⏱️ Timeout - Path: {request.url.path}")
         return JSONResponse(

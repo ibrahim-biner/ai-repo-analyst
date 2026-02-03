@@ -7,6 +7,43 @@ import { Lock, Mail, Loader2, User, KeyRound, Terminal } from 'lucide-react';
 import LegalModal, { type LegalType } from '../components/LegalModal';
 import { supabase } from '../supabase';
 
+// Yardımcı doğrulama fonksiyonları
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
+const isValidPassword = (password: string): boolean => {
+  return password.length >= 6;
+};
+
+// Supabase hata mesajlarını Türkçeleştir
+const translateError = (message: string): string => {
+  const errorMap: Record<string, string> = {
+    'Invalid login credentials': 'E-posta veya şifre hatalı.',
+    'Email not confirmed': 'E-posta adresiniz doğrulanmamış. Lütfen e-postanızı kontrol edin.',
+    'User already registered': 'Bu e-posta adresi zaten kayıtlı.',
+    'Password should be at least 6 characters': 'Şifre en az 6 karakter olmalıdır.',
+    'Unable to validate email address: invalid format': 'Geçersiz e-posta formatı.',
+    'Signup requires a valid password': 'Geçerli bir şifre gereklidir.',
+    'Email rate limit exceeded': 'E-posta gönderim limiti aşıldı. Lütfen birkaç dakika bekleyip tekrar deneyin.',
+    'For security purposes, you can only request this once every 60 seconds': 'Güvenlik nedeniyle 60 saniyede bir istek yapabilirsiniz. Lütfen bekleyin.',
+  };
+
+  for (const [key, value] of Object.entries(errorMap)) {
+    if (message.toLowerCase().includes(key.toLowerCase())) {
+      return value;
+    }
+  }
+  
+  // Rate limit kontrolü
+  if (message.toLowerCase().includes('rate limit')) {
+    return 'Çok fazla deneme yaptınız. Lütfen birkaç dakika bekleyip tekrar deneyin.';
+  }
+  
+  return message;
+};
+
 interface AuthProps {
   onLoginSuccess: () => void;
   initialError?: string | null;
@@ -38,30 +75,60 @@ export default function Auth({ onLoginSuccess, initialError }: AuthProps) {
     setLoading(true);
     setMsg(null);
 
+    // E-posta normalize et (küçük harf, boşluk temizle)
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // E-posta format doğrulaması
+    if (!isValidEmail(normalizedEmail)) {
+      setMsg({ type: 'error', text: 'Geçerli bir e-posta adresi girin.' });
+      setLoading(false);
+      return;
+    }
+
     try {
       // Şifremi unuttum modu
       if (forgotMode) {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin,  // Hash yok - Supabase ConfirmationURL zaten type=recovery içeriyor
+        // Güvenlik: E-posta kayıtlı olmasa bile aynı mesajı göster (enumeration saldırısı önleme)
+        const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+          redirectTo: window.location.origin,
         });
-        if (error) throw error;
-        setMsg({ type: 'success', text: 'Şifre sıfırlama linki e-posta adresinize gönderildi!' });
+        // Hata olsa bile kullanıcıya aynı mesajı göster (güvenlik için)
+        if (error) {
+          console.error('Password reset error:', error.message);
+        }
+        setMsg({ type: 'success', text: 'Eğer bu e-posta adresi kayıtlıysa, şifre sıfırlama linki gönderildi.' });
         setForgotMode(false);
         return;
       }
 
       if (isSignUp) {
-        if (password !== confirmPassword) throw new Error("Şifreler birbiriyle uyuşmuyor!");
-        if (!firstName.trim() || !lastName.trim()) throw new Error("Lütfen isim ve soyisim alanlarını doldurun.");
+        // İsim ve soyisim doğrulaması
+        const trimmedFirstName = firstName.trim();
+        const trimmedLastName = lastName.trim();
+        
+        if (!trimmedFirstName || trimmedFirstName.length < 2) {
+          throw new Error('Ad en az 2 karakter olmalıdır.');
+        }
+        if (!trimmedLastName || trimmedLastName.length < 2) {
+          throw new Error('Soyad en az 2 karakter olmalıdır.');
+        }
+        
+        // Şifre doğrulaması
+        if (!isValidPassword(password)) {
+          throw new Error('Şifre en az 6 karakter olmalıdır.');
+        }
+        if (password !== confirmPassword) {
+          throw new Error('Şifreler birbiriyle uyuşmuyor!');
+        }
 
         const { error } = await supabase.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: {
             data: {
-              first_name: firstName,
-              last_name: lastName,
-              full_name: `${firstName} ${lastName}`,
+              first_name: trimmedFirstName,
+              last_name: trimmedLastName,
+              full_name: `${trimmedFirstName} ${trimmedLastName}`,
             }
           }
         });
@@ -73,8 +140,13 @@ export default function Auth({ onLoginSuccess, initialError }: AuthProps) {
         setConfirmPassword('');
         
       } else {
+        // Giriş için şifre kontrolü
+        if (!password) {
+          throw new Error('Şifre boş olamaz.');
+        }
+        
         const { error } = await supabase.auth.signInWithPassword({
-          email,
+          email: normalizedEmail,
           password,
         });
         if (error) throw error;
@@ -82,18 +154,7 @@ export default function Auth({ onLoginSuccess, initialError }: AuthProps) {
       }
     } catch (error: any) {
       // Hata mesajlarını Türkçeleştir
-      let errorMessage = error.message || 'Bir hata oluştu.';
-      
-      if (errorMessage.includes('email rate limit exceeded') || errorMessage.includes('rate limit')) {
-        errorMessage = 'E-posta gönderim limiti aşıldı. Lütfen 1-2 dakika bekleyip tekrar deneyin.';
-      } else if (errorMessage.includes('Invalid login credentials')) {
-        errorMessage = 'E-posta veya şifre hatalı.';
-      } else if (errorMessage.includes('Email not confirmed')) {
-        errorMessage = 'E-posta adresiniz doğrulanmamış. Lütfen e-postanızı kontrol edin.';
-      } else if (errorMessage.includes('User already registered')) {
-        errorMessage = 'Bu e-posta adresi zaten kayıtlı.';
-      }
-      
+      const errorMessage = translateError(error.message || 'Bir hata oluştu.');
       setMsg({ type: 'error', text: errorMessage });
     } finally {
       setLoading(false);
