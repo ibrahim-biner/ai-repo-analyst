@@ -85,12 +85,7 @@ Aşağıda kullanıcının reposundan alınan ilgili kod parçaları var:
 2. **Yapılandırılmış Yanıt:** Başlıklar (##, ###) ve maddeler kullan
 3. **Kod Örnekleri:** Kod bloklarını dil belirterek yaz (```python, ```javascript vb.)
 4. **Dosya Referansları:** 📁 `dosya_adi.py` şeklinde belirt
-5. **Görsel Diyagramlar:** Karmaşık yapıları açıklarken Mermaid kullan:
-   ```mermaid
-   graph TD
-     A[Başlangıç] --> B[İşlem]
-     B --> C[Sonuç]
-   ```
+
 
 ### Emoji Kullanımı:
 - 💡 Öneri ve ipuçları için
