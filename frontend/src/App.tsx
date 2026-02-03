@@ -2,7 +2,7 @@
  * Ana uygulama bileşeni.
  * Repo analizi, sohbet ve kullanıcı oturum yönetimi.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Send, Github, Loader2, Database, Terminal, Cpu, AlertCircle, LogOut, User, Clock, ChevronRight, Trash2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 // @ts-ignore
@@ -12,6 +12,7 @@ import remarkGfm from 'remark-gfm';
 
 import Toast from './components/Toast';
 import ResetPasswordModal from './components/ResetPasswordModal';
+import NotFound from './components/NotFound';
 import Auth from './pages/Auth';
 import { indexRepo, chatWithRepo, getUserRepos, saveMessage, getChatHistory, deleteRepo } from './services/api';
 import type { UserRepo } from './services/api';
@@ -23,10 +24,12 @@ interface Message {
 }
 
 function App() {
-    // Şifre sıfırlama modalı için state
-    const [showResetModal, setShowResetModal] = useState(false);
+  // Şifre sıfırlama modalı için state
+  const [showResetModal, setShowResetModal] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [loadingSession, setLoadingSession] = useState(true);
+  const isRecoveryMode = useRef(false);
+  const [show404, setShow404] = useState(false);
   
   const [repoUrl, setRepoUrl] = useState('');
   const [activeRepo, setActiveRepo] = useState<string | null>(null);
@@ -47,57 +50,82 @@ function App() {
   const [toastMessage, setToastMessage] = useState<{text: string, type: 'success' | 'error'}>({text: '', type: 'success'});
 
   useEffect(() => {
-    // İlk olarak hash kontrolü yap - şifre sıfırlama linki mi?
+    // Pathname kontrolü - SPA için sadece root kabul
+    const pathname = window.location.pathname;
+    if (pathname !== '/' && pathname !== '/index.html') {
+      console.log('Invalid pathname detected:', pathname);
+      setShow404(true);
+      setLoadingSession(false);
+      return;
+    }
+
+    // İlk olarak URL hash kontrolü - şifre sıfırlama linki mi?
     const hash = window.location.hash;
     
-    const handleRecoveryToken = async () => {
-      if (hash && hash.includes('access_token') && hash.includes('type=recovery')) {
-        // Hash'ten token'ları parse et
-        const hashParams = new URLSearchParams(hash.substring(1));
-        const accessToken = hashParams.get('access_token');
-        const refreshToken = hashParams.get('refresh_token');
-        
-        if (accessToken) {
-          try {
-            // Token ile oturum başlat
-            const { error } = await supabase.auth.setSession({
-              access_token: accessToken,
-              refresh_token: refreshToken || '',
-            });
-            
-            if (!error) {
-              setShowResetModal(true);
-            } else {
-              console.error('Recovery session error:', error);
-            }
-          } catch (err) {
-            console.error('Token set error:', err);
-          }
-        }
-      } else if (hash && hash.includes('type=recovery')) {
+    // Hash'te recovery varsa hemen işaretle
+    if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
+      console.log('Recovery mode detected from URL hash');
+      isRecoveryMode.current = true;
+      setShowResetModal(true);
+      setLoadingSession(false);
+    }
+
+    // Supabase oturum ve auth state değişikliklerini dinle
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      console.log('Auth event:', event);
+      
+      if (event === 'PASSWORD_RECOVERY') {
+        console.log('PASSWORD_RECOVERY event received');
+        isRecoveryMode.current = true;
         setShowResetModal(true);
+        setLoadingSession(false);
+        return;
+      }
+
+      if (event === 'SIGNED_IN' && isRecoveryMode.current) {
+        // Recovery modunda SIGNED_IN gelirse modal'ı açık tut
+        console.log('SIGNED_IN during recovery mode - keeping modal open');
+        setShowResetModal(true);
+        setLoadingSession(false);
+        return;
+      }
+
+      // Normal session güncelleme (recovery mode değilse)
+      if (!isRecoveryMode.current) {
+        setSession(currentSession);
+        if (currentSession?.user?.id) fetchRepos(currentSession.user.id);
+        setLoadingSession(false);
+      }
+    });
+
+    // İlk session kontrolü (recovery mode değilse)
+    const initSession = async () => {
+      if (isRecoveryMode.current) {
+        return;
+      }
+
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        if (!isRecoveryMode.current) {
+          setSession(initialSession);
+          if (initialSession?.user?.id) fetchRepos(initialSession.user.id);
+        }
+      } catch (error) {
+        console.error('Session check error:', error);
+      } finally {
+        if (!isRecoveryMode.current) {
+          setLoadingSession(false);
+        }
       }
     };
 
-    handleRecoveryToken();
+    if (!isRecoveryMode.current) {
+      initSession();
+    }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoadingSession(false);
-      if (session?.user?.id) fetchRepos(session.user.id);
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      if (session?.user?.id) fetchRepos(session.user.id);
-      
-      // Eğer recovery event ise modal aç
-      if (_event === 'PASSWORD_RECOVERY') {
-        setShowResetModal(true);
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchRepos = async (userId: string) => {
@@ -253,24 +281,53 @@ function App() {
     }
   };
 
-  // Şifre sıfırlama modalı her zaman gösterilmeli (oturum durumundan bağımsız)
+  // Modal kapatma handler
+  const handleResetModalClose = async () => {
+    setShowResetModal(false);
+    isRecoveryMode.current = false;
+    // Hash'i temizle
+    window.history.replaceState(null, '', window.location.pathname);
+    // Çıkış yap ve login'e yönlendir
+    await supabase.auth.signOut();
+    setSession(null);
+  };
+
+  // 404 sayfasına yönlendirme handler
+  const handleGoHome = () => {
+    setShow404(false);
+    window.history.replaceState(null, '', '/');
+  };
+
+  // 404 sayfası göster
+  if (show404) {
+    return <NotFound onGoHome={handleGoHome} />;
+  }
+
+  // Şifre sıfırlama modalı açıksa, sadece modal göster
   if (showResetModal) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-950 p-4 font-sans bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-slate-950 to-slate-950">
         <ResetPasswordModal 
           open={true} 
-          onClose={() => {
-            setShowResetModal(false);
-            // Hash'i temizle
-            window.location.hash = '';
-            window.location.href = '/';
-          }} 
+          onClose={handleResetModalClose} 
         />
       </div>
     );
   }
 
-  if (loadingSession) return <div className="flex h-screen items-center justify-center bg-slate-950 text-white"><Loader2 className="animate-spin w-8 h-8 text-blue-500"/></div>;
+  // Oturum yükleniyorsa loading göster
+  if (loadingSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-950">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="animate-spin w-8 h-8 text-blue-500" />
+          <span className="text-slate-400 text-sm">Yükleniyor...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Oturum yoksa login ekranı göster
   if (!session) return <Auth onLoginSuccess={() => {}} />;
 
   return (

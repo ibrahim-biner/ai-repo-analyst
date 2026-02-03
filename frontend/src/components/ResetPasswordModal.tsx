@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../supabase";
 import { Lock, CheckCircle, Loader2, KeyRound } from "lucide-react";
 
@@ -13,6 +13,53 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    if (!open) return;
+
+    // Supabase'ın hash'i işlemesini bekle ve session kontrolü yap
+    const waitForSession = async () => {
+      setCheckingSession(true);
+      
+      // Küçük bir gecikme - Supabase hash'i işlesin
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        console.log('Session ready for password reset:', session.user?.email);
+        setSessionReady(true);
+        setCheckingSession(false);
+      } else {
+        console.log('No session yet, waiting for auth state change...');
+        
+        // Auth state change'i dinle
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+          console.log('Modal auth event:', event);
+          if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+            if (session) {
+              console.log('Session received via auth state change');
+              setSessionReady(true);
+              setCheckingSession(false);
+              subscription.unsubscribe();
+            }
+          }
+        });
+
+        // 5 saniye sonra hala session yoksa hata göster
+        setTimeout(() => {
+          setCheckingSession(false);
+          if (!sessionReady) {
+            setError('Oturum başlatılamadı. Şifre sıfırlama linkinin süresi dolmuş olabilir. Lütfen yeni bir link talep edin.');
+          }
+        }, 5000);
+      }
+    };
+
+    waitForSession();
+  }, [open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,11 +78,19 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
     setLoading(true);
 
     try {
-      const { error } = await supabase.auth.updateUser({ password });
-      if (error) throw error;
+      const { error: updateError } = await supabase.auth.updateUser({ password });
+      
+      if (updateError) {
+        let errorMessage = updateError.message;
+        if (errorMessage.includes('Auth session missing')) {
+          errorMessage = 'Oturum süresi dolmuş. Lütfen yeni bir şifre sıfırlama linki talep edin.';
+        }
+        throw new Error(errorMessage);
+      }
+      
       setDone(true);
       
-      // 2 saniye sonra modal'ı kapat ve login'e yönlendir
+      // 2 saniye sonra modal'ı kapat
       setTimeout(() => {
         onClose();
       }, 2000);
@@ -57,20 +112,43 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
 
       {done ? (
         <div className="text-center py-8 relative z-10">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-500/20 ring-1 ring-green-500/30 mb-4">
-            <CheckCircle className="h-8 w-8 text-green-400" />
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-green-600/20 to-green-900/30 ring-1 ring-green-500/30 shadow-lg shadow-green-500/20 mb-6">
+            <CheckCircle className="h-10 w-10 text-green-400" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">Şifreniz Güncellendi!</h3>
+          <h3 className="text-2xl font-bold text-white mb-2">Şifreniz Güncellendi!</h3>
           <p className="text-slate-400 text-sm">Yeni şifrenizle giriş yapabilirsiniz.</p>
+          <p className="text-slate-500 text-xs mt-4">Giriş ekranına yönlendiriliyorsunuz...</p>
+        </div>
+      ) : checkingSession ? (
+        <div className="text-center py-8 relative z-10">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600/20 to-blue-900/30 ring-1 ring-blue-500/30 shadow-lg shadow-blue-500/20 mb-6">
+            <Loader2 className="h-10 w-10 text-blue-400 animate-spin" />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Oturum Başlatılıyor...</h3>
+          <p className="text-slate-400 text-sm">Lütfen bekleyin.</p>
+        </div>
+      ) : !sessionReady && error ? (
+        <div className="text-center py-8 relative z-10">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-red-600/20 to-red-900/30 ring-1 ring-red-500/30 shadow-lg shadow-red-500/20 mb-6">
+            <Lock className="h-10 w-10 text-red-400" />
+          </div>
+          <h3 className="text-xl font-bold text-white mb-2">Oturum Hatası</h3>
+          <p className="text-red-300 text-sm mt-2">{error}</p>
+          <button
+            onClick={onClose}
+            className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors"
+          >
+            Giriş Ekranına Dön
+          </button>
         </div>
       ) : (
         <div className="relative z-10">
           <div className="text-center mb-6">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600/20 ring-1 ring-blue-500/30 mb-4">
-              <Lock className="h-8 w-8 text-blue-400" />
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600/20 to-blue-900/30 ring-1 ring-blue-500/30 shadow-lg shadow-blue-500/20 mb-6">
+              <Lock className="h-10 w-10 text-blue-400" />
             </div>
-            <h3 className="text-xl font-bold text-white">Yeni Şifre Belirle</h3>
-            <p className="text-slate-400 text-sm mt-1">Hesabınız için yeni bir şifre oluşturun.</p>
+            <h3 className="text-2xl font-bold text-white">Yeni Şifre Belirle</h3>
+            <p className="text-slate-400 text-sm mt-2">Hesabınız için yeni bir şifre oluşturun.</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -117,7 +195,7 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || password !== confirmPassword}
               className="group relative flex w-full justify-center rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-4 py-3 text-sm font-semibold text-white hover:from-blue-500 hover:to-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 transition-all shadow-lg shadow-blue-900/30 active:scale-95"
             >
               {loading ? <Loader2 className="animate-spin h-5 w-5" /> : 'Şifreyi Güncelle'}

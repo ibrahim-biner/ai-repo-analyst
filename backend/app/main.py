@@ -2,6 +2,8 @@
 FastAPI ana uygulama giriş noktası.
 CORS, rate limiting ve API route'ları burada yapılandırılır.
 """
+import asyncio
+import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,6 +14,13 @@ import os
 from app.core.config import settings
 from app.api.api import api_router
 from app.limiter import limiter
+
+# Logging yapılandırması
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 IS_DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 app = FastAPI(title=settings.PROJECT_NAME, version=settings.VERSION,
@@ -25,10 +34,48 @@ if not origins:
     origins = ["http://localhost:5173"]
 
 app.state.limiter = limiter
-app.add_exception_handler(
-    RateLimitExceeded,
-    lambda request, exc: JSONResponse(status_code=429, content={"detail": "Günlük hakkınız doldu. Lütfen daha sonra tekrar deneyin."})
-)
+
+# Rate limit aşıldığında özel hata mesajı
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    logger.warning(f"⚠️ Rate limit aşıldı - IP: {request.client.host}")
+    return JSONResponse(
+        status_code=429, 
+        content={
+            "detail": "Çok fazla istek gönderdiniz. Lütfen biraz bekleyip tekrar deneyin.",
+            "retry_after": "60 saniye"
+        }
+    )
+
+# Genel hata yakalayıcı
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"❌ Sunucu Hatası: {str(exc)} - Path: {request.url.path}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Sunucu hatası oluştu. Lütfen daha sonra tekrar deneyin."}
+    )
+
+# Request timeout middleware (120 saniye)
+@app.middleware("http")
+async def timeout_middleware(request: Request, call_next):
+    try:
+        return await asyncio.wait_for(call_next(request), timeout=120.0)
+    except asyncio.TimeoutError:
+        logger.error(f"⏱️ Timeout - Path: {request.url.path}")
+        return JSONResponse(
+            status_code=504,
+            content={"detail": "İşlem zaman aşımına uğradı. Lütfen daha küçük bir repo deneyin."}
+        )
+
+# Request loglama middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"➡️ {request.method} {request.url.path} - IP: {request.client.host}")
+    response = await call_next(request)
+    logger.info(f"⬅️ {request.method} {request.url.path} - Status: {response.status_code}")
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

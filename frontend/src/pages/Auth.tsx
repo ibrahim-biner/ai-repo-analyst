@@ -1,7 +1,7 @@
 /**
  * Giriş ve kayıt ekranı. Supabase Auth kullanır.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Lock, Mail, Loader2, User, KeyRound, Terminal } from 'lucide-react';
 
 import LegalModal, { type LegalType } from '../components/LegalModal';
@@ -9,9 +9,10 @@ import { supabase } from '../supabase';
 
 interface AuthProps {
   onLoginSuccess: () => void;
+  initialError?: string | null;
 }
 
-export default function Auth({ onLoginSuccess }: AuthProps) {
+export default function Auth({ onLoginSuccess, initialError }: AuthProps) {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -23,6 +24,14 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
   const [msg, setMsg] = useState<{ type: 'error' | 'success', text: string } | null>(null);
   const [legalModal, setLegalModal] = useState<LegalType | null>(null);
   const [forgotMode, setForgotMode] = useState(false);
+
+  // initialError varsa göster ve şifremi unuttum moduna geç
+  useEffect(() => {
+    if (initialError) {
+      setMsg({ type: 'error', text: initialError });
+      setForgotMode(true);
+    }
+  }, [initialError]);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,7 +81,20 @@ export default function Auth({ onLoginSuccess }: AuthProps) {
         onLoginSuccess();
       }
     } catch (error: any) {
-      setMsg({ type: 'error', text: error.message || 'Bir hata oluştu.' });
+      // Hata mesajlarını Türkçeleştir
+      let errorMessage = error.message || 'Bir hata oluştu.';
+      
+      if (errorMessage.includes('email rate limit exceeded') || errorMessage.includes('rate limit')) {
+        errorMessage = 'E-posta gönderim limiti aşıldı. Lütfen 1-2 dakika bekleyip tekrar deneyin.';
+      } else if (errorMessage.includes('Invalid login credentials')) {
+        errorMessage = 'E-posta veya şifre hatalı.';
+      } else if (errorMessage.includes('Email not confirmed')) {
+        errorMessage = 'E-posta adresiniz doğrulanmamış. Lütfen e-postanızı kontrol edin.';
+      } else if (errorMessage.includes('User already registered')) {
+        errorMessage = 'Bu e-posta adresi zaten kayıtlı.';
+      }
+      
+      setMsg({ type: 'error', text: errorMessage });
     } finally {
       setLoading(false);
     }
