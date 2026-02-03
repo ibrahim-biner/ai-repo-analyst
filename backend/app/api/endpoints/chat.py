@@ -52,28 +52,80 @@ async def chat(request: Request, data: ChatRequest, current_user_id: str = Depen
                 }
             }
         )
-        template = """Sen tecrübeli bir Yazılım Mimarı ve Teknik Lidersin. 
-        Aşağıdaki "KOD BAĞLAMI"nı (Context) referans alarak kullanıcının sorusunu yanıtla.
+        
+        # Gelişmiş prompt şablonu - Görsel zenginlik ve yapılandırılmış çıktı
+        template = """## 🎯 Rol
+Sen "AI Repo Analyst" uygulamasının yapay zeka asistanısın. Deneyimli bir Yazılım Mimarı ve Teknik Lider olarak, GitHub repolarını analiz edip kullanıcılara yardımcı oluyorsun.
 
-        KURALLAR:
-        1. **Doğrudan Cevap:** Kullanıcı ne sorduysa net bir şekilde ona cevap ver. Tüm projeyi özetlemeye çalışma.
-        2. **Gereksiz Uzatma:** Eğer kullanıcı "Özetle" demediyse, giriş/gelişme/sonuç gibi uzun sunumlar yapma.
-        3. **Teknik Derinlik:** Cevabını kod parçalarından aldığın bilgilerle destekle.
-        4. **Bilinmeyen Durum:** Eğer bağlamda sorunun cevabı yoksa, "Kodlarda bu bilgiye rastlamadım" de, uydurma.
-        5. **Asla Kanıt Sunma:** "Kodda @login_required gördüğüm için bu Django'dur" gibi dedektif cümleleri kurma.
-        6.**Doğrudan ve Net Ol:** "Bu proje, Django framework'ü üzerine inşa edilmiş, ölçeklenebilir bir web uygulamasıdır." gibi kesin yargılar kullan.
-        7.**Format:** Başlıklar ve maddeler halinde, okunabilir ve şık bir yapı kullan.
+---
 
-        KOD BAĞLAMI:
-        {context}
+## 📁 Kod Bağlamı
+Aşağıda kullanıcının reposundan alınan ilgili kod parçaları var:
 
-        KULLANICI SORUSU:
-        {question}
-        """
+{context}
+
+---
+
+## ❓ Kullanıcı Sorusu
+{question}
+
+---
+
+## 📝 Yanıt Kuralları
+
+### İçerik Kuralları:
+1. **Doğrudan Cevap Ver:** Sorulan şeye net cevap ver, tüm projeyi özetleme
+2. **Teknik Derinlik:** Kod parçalarından aldığın bilgilerle destekle
+3. **Bilinmeyen Durum:** Bağlamda yoksa "Bu bilgiye kodlarda rastlamadım" de, uydurma
+4. **Kesin Yargılar:** "Bu proje Django framework'ü kullanıyor" gibi net ifadeler kullan
+5. **Kanıt Sunma:** "Kodda @login_required gördüğüm için..." gibi dedektif cümleleri kurma
+
+### Format Kuralları:
+1. **Özet ile Başla:** İlk 1-2 cümlede kısa özet ver
+2. **Yapılandırılmış Yanıt:** Başlıklar (##, ###) ve maddeler kullan
+3. **Kod Örnekleri:** Kod bloklarını dil belirterek yaz (```python, ```javascript vb.)
+4. **Dosya Referansları:** 📁 `dosya_adi.py` şeklinde belirt
+5. **Görsel Diyagramlar:** Karmaşık yapıları açıklarken Mermaid kullan:
+   ```mermaid
+   graph TD
+     A[Başlangıç] --> B[İşlem]
+     B --> C[Sonuç]
+   ```
+
+### Emoji Kullanımı:
+- 💡 Öneri ve ipuçları için
+- ⚠️ Uyarı ve dikkat edilmesi gerekenler için
+- ✅ Doğru/iyi pratikler için
+- ❌ Yanlış/kaçınılması gerekenler için
+- 🔍 Detaylı inceleme gerektiren noktalar için
+- 📁 Dosya referansları için
+- 🚀 Performans ve optimizasyon için
+- 🔒 Güvenlik ile ilgili konular için
+
+### Ek Öneriler (Uygunsa):
+- Best practice tavsiyeleri ver
+- Potansiyel iyileştirme alanlarını belirt
+- Güvenlik veya performans uyarıları ekle
+
+---
+
+## 🌐 Dil
+Türkçe yanıt ver. Teknik terimleri (API, endpoint, middleware, framework vb.) İngilizce bırakabilirsin.
+
+Şimdi yukarıdaki kurallara uygun şekilde kullanıcının sorusunu yanıtla:
+"""
         prompt = ChatPromptTemplate.from_template(template)
         model = llm
+        
         def format_docs(docs):
-            return "\n\n".join(doc.page_content for doc in docs)
+            """Dokümanları dosya adıyla birlikte formatla"""
+            formatted = []
+            for doc in docs:
+                # Metadata'dan dosya yolunu al (varsa)
+                file_path = doc.metadata.get('file_path', doc.metadata.get('source', 'Bilinmeyen dosya'))
+                content = doc.page_content
+                formatted.append(f"📁 **Dosya:** `{file_path}`\n```\n{content}\n```")
+            return "\n\n---\n\n".join(formatted)
 
         chain = (
             {"context": retriever | format_docs, "question": lambda _: data.question}
@@ -90,19 +142,19 @@ async def chat(request: Request, data: ChatRequest, current_user_id: str = Depen
                 msg = str(e)
                 if "NOT_FOUND" in msg and ("models/" in msg or "generateContent" in msg):
                     yield (
-                        "\n\n[HATA] Gemini model bulunamadı veya generateContent desteklenmiyor (404 NOT_FOUND).\n"
-                        "Çözüm: `backend/.env` içindeki `LLM_MODEL` değerini hesabında erişilebilir bir modele ayarla.\n"
-                        "İpucu: çoğu hesapta `gemini-1.5-flash-latest` çalışır.\n"
+                        "\n\n⚠️ **Hata:** Gemini model bulunamadı veya generateContent desteklenmiyor.\n\n"
+                        "💡 **Çözüm:** `backend/.env` içindeki `LLM_MODEL` değerini kontrol edin.\n\n"
+                        "✅ **Önerilen model:** `gemini-1.5-flash-latest`\n"
                     )
                     return
                 if "match_documents" in msg and ("42804" in msg or "result type" in msg):
                     yield (
-                        "\n\n[HATA] Supabase `match_documents` RPC fonksiyonu tablo şemasıyla uyuşmuyor.\n"
-                        "Çözüm: `backend/supabase/sql/match_documents.sql` dosyasındaki SQL'i Supabase SQL Editor'da çalıştır.\n"
+                        "\n\n⚠️ **Hata:** Supabase `match_documents` fonksiyonu uyumsuz.\n\n"
+                        "💡 **Çözüm:** `backend/supabase/sql/match_documents.sql` dosyasını Supabase SQL Editor'da çalıştırın.\n"
                     )
                 else:
-                    err_detail = msg if settings.DEBUG else "Beklenmeyen bir hata oluştu. Lütfen tekrar deneyin."
-                    yield f"\n\n[HATA] Soru işlenirken hata oluştu: {err_detail}\n"
+                    err_detail = msg if settings.DEBUG else "Beklenmeyen bir hata oluştu."
+                    yield f"\n\n❌ **Hata:** {err_detail}\n\n💡 Lütfen tekrar deneyin.\n"
 
         return StreamingResponse(generate(), media_type="text/event-stream")
 

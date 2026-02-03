@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm';
 import Toast from './components/Toast';
 import ResetPasswordModal from './components/ResetPasswordModal';
 import NotFound from './components/NotFound';
+import EnhancedMarkdown from './components/EnhancedMarkdown';
 import Auth from './pages/Auth';
 import { indexRepo, chatWithRepo, getUserRepos, saveMessage, getChatHistory, deleteRepo } from './services/api';
 import type { UserRepo } from './services/api';
@@ -59,23 +60,39 @@ function App() {
       return;
     }
 
-    // İlk olarak URL hash kontrolü - şifre sıfırlama linki mi?
-    const hash = window.location.hash;
-    
-    // Hash'te recovery varsa hemen işaretle
-    if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
-      console.log('Recovery mode detected from URL hash');
-      isRecoveryMode.current = true;
-      setShowResetModal(true);
-      setLoadingSession(false);
-    }
+    // Recovery mode kontrolü ve session başlatma
+    const initializeAuth = async () => {
+      const hash = window.location.hash;
+      
+      // Hash'te recovery token var mı kontrol et
+      if (hash && (hash.includes('type=recovery') || hash.includes('access_token'))) {
+        console.log('🔐 Recovery mode detected from URL hash');
+        isRecoveryMode.current = true;
+        
+        // Modal'ı aç - session kontrolü modal içinde yapılacak
+        setShowResetModal(true);
+        setLoadingSession(false);
+        return;
+      }
+
+      // Normal session kontrolü
+      try {
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        setSession(initialSession);
+        if (initialSession?.user?.id) fetchRepos(initialSession.user.id);
+      } catch (error) {
+        console.error('Session check error:', error);
+      } finally {
+        setLoadingSession(false);
+      }
+    };
 
     // Supabase oturum ve auth state değişikliklerini dinle
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      console.log('Auth event:', event);
+      console.log('🔄 Auth event:', event);
       
       if (event === 'PASSWORD_RECOVERY') {
-        console.log('PASSWORD_RECOVERY event received');
+        console.log('🔐 PASSWORD_RECOVERY event received');
         isRecoveryMode.current = true;
         setShowResetModal(true);
         setLoadingSession(false);
@@ -84,9 +101,14 @@ function App() {
 
       if (event === 'SIGNED_IN' && isRecoveryMode.current) {
         // Recovery modunda SIGNED_IN gelirse modal'ı açık tut
-        console.log('SIGNED_IN during recovery mode - keeping modal open');
+        console.log('✅ SIGNED_IN during recovery mode - keeping modal open');
         setShowResetModal(true);
         setLoadingSession(false);
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED' && isRecoveryMode.current) {
+        console.log('🔄 Token refreshed during recovery');
         return;
       }
 
@@ -98,30 +120,7 @@ function App() {
       }
     });
 
-    // İlk session kontrolü (recovery mode değilse)
-    const initSession = async () => {
-      if (isRecoveryMode.current) {
-        return;
-      }
-
-      try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
-        if (!isRecoveryMode.current) {
-          setSession(initialSession);
-          if (initialSession?.user?.id) fetchRepos(initialSession.user.id);
-        }
-      } catch (error) {
-        console.error('Session check error:', error);
-      } finally {
-        if (!isRecoveryMode.current) {
-          setLoadingSession(false);
-        }
-      }
-    };
-
-    if (!isRecoveryMode.current) {
-      initSession();
-    }
+    initializeAuth();
 
     return () => {
       subscription.unsubscribe();
@@ -521,9 +520,13 @@ function App() {
                     prose-th:bg-slate-800 prose-th:text-blue-400 prose-th:p-3 prose-th:border prose-th:border-slate-700
                     prose-td:p-3 prose-td:border prose-td:border-slate-700
                   `}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {msg.content}
-                    </ReactMarkdown>
+                    {msg.role === 'ai' ? (
+                      <EnhancedMarkdown content={msg.content} />
+                    ) : (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    )}
                   </div>
                 </div>
               </div>

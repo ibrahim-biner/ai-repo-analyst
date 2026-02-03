@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../supabase";
-import { Lock, CheckCircle, Loader2, KeyRound } from "lucide-react";
+import { Lock, CheckCircle, Loader2, KeyRound, AlertTriangle } from "lucide-react";
 
 interface ResetPasswordModalProps {
   open: boolean;
@@ -19,46 +19,77 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
   useEffect(() => {
     if (!open) return;
 
-    // Supabase'ın hash'i işlemesini bekle ve session kontrolü yap
-    const waitForSession = async () => {
-      setCheckingSession(true);
-      
-      // Küçük bir gecikme - Supabase hash'i işlesin
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      if (session) {
-        console.log('Session ready for password reset:', session.user?.email);
-        setSessionReady(true);
-        setCheckingSession(false);
-      } else {
-        console.log('No session yet, waiting for auth state change...');
-        
-        // Auth state change'i dinle
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-          console.log('Modal auth event:', event);
-          if (event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-            if (session) {
-              console.log('Session received via auth state change');
-              setSessionReady(true);
-              setCheckingSession(false);
-              subscription.unsubscribe();
-            }
-          }
-        });
+    let mounted = true;
+    let retryCount = 0;
+    const maxRetries = 15; // 7.5 saniye (15 x 500ms)
 
-        // 5 saniye sonra hala session yoksa hata göster
-        setTimeout(() => {
+    const checkSession = async (): Promise<boolean> => {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('❌ Session check error:', error);
+        }
+
+        if (session && mounted) {
+          console.log('✅ Session ready:', session.user?.email);
+          setSessionReady(true);
           setCheckingSession(false);
-          if (!sessionReady) {
-            setError('Oturum başlatılamadı. Şifre sıfırlama linkinin süresi dolmuş olabilir. Lütfen yeni bir link talep edin.');
-          }
-        }, 5000);
+          return true;
+        }
+
+        return false;
+      } catch (e) {
+        console.error('❌ Session check exception:', e);
+        return false;
       }
     };
 
+    const waitForSession = async () => {
+      // İlk kontrol
+      const hasSession = await checkSession();
+      if (hasSession) return;
+
+      console.log('⏳ Session not ready, starting retry...');
+
+      // Session yoksa, retry ile bekle
+      const retryInterval = setInterval(async () => {
+        retryCount++;
+        console.log(`⏳ Retry ${retryCount}/${maxRetries}...`);
+        
+        const hasSession = await checkSession();
+        
+        if (hasSession || retryCount >= maxRetries) {
+          clearInterval(retryInterval);
+          
+          if (!hasSession && mounted) {
+            console.log('❌ Max retries reached, no session');
+            setError('Oturum başlatılamadı. Şifre sıfırlama linkinin süresi dolmuş olabilir. Lütfen yeni bir link talep edin.');
+            setCheckingSession(false);
+          }
+        }
+      }, 500);
+
+      return () => clearInterval(retryInterval);
+    };
+
+    // Auth state değişikliklerini dinle
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔄 Modal auth event:', event);
+      
+      if ((event === 'PASSWORD_RECOVERY' || event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session && mounted) {
+        console.log('✅ Session received via auth state:', session.user?.email);
+        setSessionReady(true);
+        setCheckingSession(false);
+      }
+    });
+
     waitForSession();
+
+    return () => {
+      mounted = false;
+      subscription.unsubscribe();
+    };
   }, [open]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -82,18 +113,26 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
       
       if (updateError) {
         let errorMessage = updateError.message;
+        
         if (errorMessage.includes('Auth session missing')) {
           errorMessage = 'Oturum süresi dolmuş. Lütfen yeni bir şifre sıfırlama linki talep edin.';
+        } else if (errorMessage.includes('Password should be')) {
+          errorMessage = 'Şifre en az 6 karakter olmalıdır.';
+        } else if (errorMessage.includes('same password')) {
+          errorMessage = 'Yeni şifre mevcut şifrenizle aynı olamaz.';
         }
+        
         throw new Error(errorMessage);
       }
       
       setDone(true);
       
-      // 2 saniye sonra modal'ı kapat
-      setTimeout(() => {
+      // 2.5 saniye sonra çıkış yap ve modal'ı kapat
+      setTimeout(async () => {
+        await supabase.auth.signOut();
         onClose();
-      }, 2000);
+      }, 2500);
+      
     } catch (err: any) {
       setError(err.message || "Şifre güncellenirken bir hata oluştu.");
     } finally {
@@ -111,6 +150,7 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
       <div className="absolute -bottom-24 -right-24 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
       {done ? (
+        // Başarılı
         <div className="text-center py-8 relative z-10">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-green-600/20 to-green-900/30 ring-1 ring-green-500/30 shadow-lg shadow-green-500/20 mb-6">
             <CheckCircle className="h-10 w-10 text-green-400" />
@@ -120,23 +160,25 @@ export default function ResetPasswordModal({ open, onClose }: ResetPasswordModal
           <p className="text-slate-500 text-xs mt-4">Giriş ekranına yönlendiriliyorsunuz...</p>
         </div>
       ) : checkingSession ? (
+        // Session bekleniyor
         <div className="text-center py-8 relative z-10">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600/20 to-blue-900/30 ring-1 ring-blue-500/30 shadow-lg shadow-blue-500/20 mb-6">
             <Loader2 className="h-10 w-10 text-blue-400 animate-spin" />
           </div>
-          <h3 className="text-xl font-bold text-white mb-2">Oturum Başlatılıyor...</h3>
+          <h3 className="text-xl font-bold text-white mb-2">Oturum Doğrulanıyor...</h3>
           <p className="text-slate-400 text-sm">Lütfen bekleyin.</p>
         </div>
-      ) : !sessionReady && error ? (
+      ) : error && !sessionReady ? (
+        // Hata durumu
         <div className="text-center py-8 relative z-10">
           <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-red-600/20 to-red-900/30 ring-1 ring-red-500/30 shadow-lg shadow-red-500/20 mb-6">
-            <Lock className="h-10 w-10 text-red-400" />
+            <AlertTriangle className="h-10 w-10 text-red-400" />
           </div>
           <h3 className="text-xl font-bold text-white mb-2">Oturum Hatası</h3>
-          <p className="text-red-300 text-sm mt-2">{error}</p>
+          <p className="text-slate-400 text-sm mb-6">{error}</p>
           <button
             onClick={onClose}
-            className="mt-6 px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-medium transition-colors"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-gradient-to-r from-blue-600 to-blue-500 px-6 py-3 text-sm font-semibold text-white hover:from-blue-500 hover:to-blue-400 transition-all"
           >
             Giriş Ekranına Dön
           </button>
