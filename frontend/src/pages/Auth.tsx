@@ -42,7 +42,7 @@ export default function Auth({ onLoginSuccess, initialError }: AuthProps) {
       // Şifremi unuttum modu
       if (forgotMode) {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/#type=recovery`,
+          redirectTo: window.location.origin,  // Hash yok - Supabase ConfirmationURL zaten type=recovery içeriyor
         });
         if (error) throw error;
         setMsg({ type: 'success', text: 'Şifre sıfırlama linki e-posta adresinize gönderildi!' });
